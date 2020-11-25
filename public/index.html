@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://unpkg.com/react@16/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-router-dom@5.2.0/umd/react-router-dom.js" crossorigin></script>
+  <script src="https://unpkg.com/redux@4/dist/redux.js" crossorigin></script>
+  <script src="https://unpkg.com/react-redux@7/dist/react-redux.js" crossorigin></script>
+  <script src="https://unpkg.com/redux-thunk@2/dist/redux-thunk.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.12.6/babel.js" crossorigin></script>
+  <script src="https://unpkg.com/ionicons@5/dist/ionicons/ionicons.esm.js" type="module" crossorigin></script>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/jsx">
+
+// ##########################
+
+const api = {
+  get (url) {
+    switch (url) {
+      case '/lots':
+        return new Promise((resolve, reject) => {
+          setTimeout(() => {
+            if (Math.random() > 0.25) {
+              resolve([
+                {
+                  id: 1,
+                  name: 'Apple',
+                  description: 'Apple description',
+                  price: 16,
+                  favorite: true
+                },
+                {
+                  id: 2,
+                  name: 'Orange',
+                  description: 'Orange description',
+                  price: 41,
+                  favorite: false
+                },
+                {
+                  id: 1,
+                  name: 'Apple 2',
+                  description: 'Apple description',
+                  price: 26,
+                  favorite: true
+                },
+                {
+                  id: 2,
+                  name: 'Orange 2',
+                  description: 'Orange description',
+                  price: 48,
+                  favorite: false
+                }                
+              ])
+            } else {
+              reject(new Error('Connection error'))
+            }
+          }, 200)
+        })
+      default:
+        throw new Error('Unknown address')
+    }
+  },
+  post (url) {
+    if (/^\/lots\/(\d+)\/favorite$/.exec(url)) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({})
+        }, 500)
+      })
+    }
+    if (/^\/lots\/(\d+)\/unfavorite$/.exec(url)) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({})
+        }, 500)
+      })
+    }
+    throw new Error('Unknown address')
+  }
+}
+
+const stream = {
+  subscribe (channel, listener) {
+    const match = /price-(\d+)/.exec(channel)
+    if (match) {
+      const interval = setInterval(() => {
+        listener({
+          id: parseInt(match[1]),
+          price: Math.round((Math.random() * 10 + 30))
+        })
+      }, 400)
+      return () => clearInterval(interval)
+    }
+  }
+}
+
+// ##########################
+
+const auctionInitialState = {
+  lots: [],
+  loading: false,
+  loaded: false,
+  error: null
+}
+
+const LOTS_CLEAR = 'LOTS_CLEAR'
+const LOTS_LOADING_PENDING = 'LOTS_LOADING_PENDING'
+const LOTS_LOADING_SUCCESS = 'LOTS_LOADING_SUCCESS'
+const LOTS_LOADING_ERROR = 'LOTS_LOADING_ERROR'
+const CHANGE_LOT_PRICE = 'CHANGE_LOT_PRICE'
+const FAVORITE_LOT = 'FAVORITE_LOT'
+const UNFAVORITE_LOT = 'UNFAVORITE_LOT'
+
+function auctionReducer (state = auctionInitialState, action) {
+  switch (action.type) {
+    case LOTS_CLEAR:
+      return {
+        ...state,
+        lots: [],
+        loading: false,
+        loaded: false,
+        error: null
+      }
+    case LOTS_LOADING_PENDING:
+      return {
+        ...state,
+        lots: [],
+        loading: true,
+        loaded: false,
+        error: null
+      }
+    case LOTS_LOADING_SUCCESS:
+      return {
+        ...state,
+        lots: action.lots,
+        loading: false,
+        loaded: true,
+        error: null
+      }
+    case LOTS_LOADING_ERROR:
+      return {
+        ...state,
+        lots: [],
+        loading: false,
+        loaded: false,
+        error: action.error
+      }
+    case CHANGE_LOT_PRICE:
+      return {
+        ...state,
+        lots: state.lots.map((lot) => {
+          if (lot.id === action.id) {
+            return {
+              ...lot,
+              price: action.price
+            }
+          }
+          return lot
+        })
+      }
+    case FAVORITE_LOT:
+      return {
+        ...state,
+        lots: state.lots.map((lot) => {
+          if (lot.id === action.id) {
+            return {
+              ...lot,
+              favorite: true
+            }
+          }
+          return lot
+        })
+      }
+    case UNFAVORITE_LOT:
+      return {
+        ...state,
+        lots: state.lots.map((lot) => {
+          if (lot.id === action.id) {
+            return {
+              ...lot,
+              favorite: false
+            }
+          }
+          return lot
+        })
+      }
+    default:
+      return state
+  }
+}
+
+function lotsClear () {
+  return {
+    type: LOTS_CLEAR
+  }
+}
+
+function lotsLoadingPending () {
+  return {
+    type: LOTS_LOADING_PENDING
+  }
+}
+
+function lotsLoadingSuccess (lots) {
+  return {
+    type: LOTS_LOADING_SUCCESS,
+    lots
+  }
+}
+
+function lotsLoadingError (error) {
+  return {
+    type: LOTS_LOADING_ERROR,
+    error
+  }
+}
+
+function loadLotsAsync () {
+  return (dispatch, getState, { api }) => {
+    dispatch(lotsLoadingPending())
+    api.get('/lots')
+      .then((lots) => dispatch(lotsLoadingSuccess(lots)))
+      .catch((error) => dispatch(lotsLoadingError(error.message)))
+  }
+}
+
+function changeLotPrice (id, price) {
+  return {
+    type: CHANGE_LOT_PRICE,
+    id,
+    price
+  }
+}
+
+function subscribeToLotPrice (id) {
+  return (dispatch, getState, { stream }) => {
+    return stream.subscribe(`price-${id}`, (data) => {
+      dispatch(changeLotPrice(data.id, data.price))
+    })
+  }
+}
+
+function favoriteLot (id) {
+  return {
+    type: FAVORITE_LOT,
+    id
+  }
+}
+
+function favoriteLotAsync (id) {
+  return (dispatch, getState, { api }) => {
+    return api.post(`/lots/${id}/favorite`).then(() => {
+      dispatch(favoriteLot(id))
+    })
+  }
+}
+
+function unfavoriteLot (id) {
+  return {
+    type: UNFAVORITE_LOT,
+    id
+  }
+}
+
+function unfavoriteLotAsync (id) {
+  return (dispatch, getState, { api }) => {
+    return api.post(`/lots/${id}/unfavorite`).then(() => {
+      dispatch(unfavoriteLot(id))
+    })
+  }
+}
+
+// ##########################
+
+const thunk = ReduxThunk.default
+
+const store = Redux.createStore(
+  Redux.combineReducers({ auction: auctionReducer }),
+  Redux.applyMiddleware(thunk.withExtraArgument({ api, stream }))
+)
+
+// ##########################
+
+const { BrowserRouter, Switch, Route, Link, NavLink, useParams } = ReactRouterDOM
+
+// ##########################
+
+function App () {
+  return (
+    <BrowserRouter>
+      <div className="app">
+        <Header />
+        <Content />
+      </div>
+    </BrowserRouter>
+  )
+}
+
+function Header () {
+  return (
+    <header className="header">
+      <Logo />
+      <Nav />
+    </header>
+  )
+}
+
+function Logo () {
+  return <img className="logo" src="/logo.png" alt="" />
+}
+
+function Nav () {
+  return (
+    <nav>
+      <ul>
+        <li><NavLink to="/" exact>Home</NavLink></li>
+        <li><NavLink to="/lots">Lots</NavLink></li>
+        <li><NavLink to="/help" exact>Help</NavLink></li>
+      </ul>
+    </nav>
+  )
+}
+
+function Content () {
+  return (
+    <Switch>
+      <Route path="/" exact>
+        <HomePage />
+      </Route>
+      <Route path="/lots" exact>
+        <LotsPage />
+      </Route>
+      <Route path="/lots/:id" exact>
+        <LotPage />
+      </Route>
+      <Route path="/help" exact>
+        <HelpPage />
+      </Route>
+      <Route path="*">
+        <NotFound />
+      </Route>
+    </Switch>
+  )
+}
+
+function NotFound () {
+  return <div>Not found!</div>
+}
+
+function Page ({ children }) {
+  return (
+    <section className="page">
+      {children}
+    </section>
+  )
+}
+
+function HomePage () {
+  return (
+    <Page>
+      <h1>Welcome Evan</h1>
+      <p>Welcome to auction!</p>
+      <p>View <Link to="/lots">lots</Link> or read our <Link to="/help">help</Link></p>
+    </Page>
+  )
+}
+
+function HelpPage () {
+  return (
+    <Page>
+      <h1>Help</h1>
+      <p>Go to <Link to="/lots">lots</Link> and:</p>
+      <ol>
+        <li>Choose an interesting lot</li>
+        <li>Add the lot to favorite list</li>
+      </ol>
+      <p>Back to <Link to="/">home</Link></p>
+    </Page>
+  )
+}
+
+function LotsPage () {
+  return (
+    <>
+      <ClockContainer />
+      <LotsContainerConnected />
+    </>
+  )
+}
+
+function LotPage () {
+  const params = useParams()
+  return (
+    <Page>
+      <h1>Lot #{params.id}</h1>
+      <p>Lot description</p>
+    </Page>
+  )
+}
+
+function ClockContainer () {
+  const [time, setTime] = React.useState(new Date())
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setTime(new Date())
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [setTime])
+
+  return <Clock time={time} />
+}
+
+function Clock ({ time }) {
+  const isDay = time.getHours() >= 7 && time.getHours() <= 21
+
+  return (
+    <div className="clock">
+      <span className="value">{time.toLocaleTimeString()}</span>
+      <span className={isDay ? 'icon day' : 'icon night'} />
+    </div>
+  )
+}
+
+function Loading () {
+  return <div className="loading">Loading...</div>
+}
+
+function AlertError ({ message, retry }) {
+  return (
+    <div className="error">
+      <span>{message}</span>
+      {retry ? (
+        <ion-icon name="reload-circle" onClick={retry} />
+      ) : null}
+    </div>
+  )
+}
+
+function LotsContainer ({ lots, loading, loaded, error, load, unload }) {
+  React.useEffect(() => {
+    if (!loaded && !loading && error === null) {
+      load()
+    }
+  }, [loaded, loading, error])
+
+  React.useEffect(() => {
+    if (loaded || error !== null) {
+      return unload
+    }
+  }, [loaded, error])
+
+  if (error !== null) {
+    return <AlertError message={error} retry={load} />
+  }
+
+  if (loading) {
+    return <Loading />
+  }
+
+  if (!loaded) {
+    return null
+  }
+
+  return <Lots lots={lots} />
+}
+
+const lotsContainerMapStateToProps = (state) => ({
+  lots: state.auction.lots,
+  loading: state.auction.loading,
+  loaded: state.auction.loaded,
+  error: state.auction.error
+})
+
+const lotsContainerMapDispatchToProps = {
+  load: loadLotsAsync,
+  unload: lotsClear
+}
+
+const LotsContainerConnected = ReactRedux.connect(
+  lotsContainerMapStateToProps,
+  lotsContainerMapDispatchToProps
+)(LotsContainer)
+
+function Lots ({ lots }) {
+  return (
+    <div className="lots">
+      {lots.map((lot) => <LotContainerConnected lot={lot} key={lot.id} />)}
+    </div>
+  )
+}
+
+function LotContainer ({ lot, subscribe }) {
+  React.useEffect(() => {
+    return subscribe(lot.id)
+  }, [lot.id])
+
+  return <LotConnected lot={lot} />
+}
+
+const lotContainerMapDispatchToProps = {
+  subscribe: subscribeToLotPrice
+}
+
+const LotContainerConnected = ReactRedux.connect(null, lotContainerMapDispatchToProps)(LotContainer)
+
+function Lot ({ lot, favorite, unfavorite }) {
+  return (
+    <article className={'lot' + (lot.favorite ? ' favorite' : '')}>
+      <div className="price">{lot.price}</div>
+      <h1>
+        <Link to={'/lots/' + lot.id}>{lot.name}</Link>
+      </h1>
+      <p>{lot.description}</p>
+      <Favorite
+        active={lot.favorite}
+        favorite={() => favorite(lot.id)}
+        unfavorite={() => unfavorite(lot.id)}
+      />
+    </article>
+  )
+}
+
+const lotMapDispatchToProps = {
+  favorite: favoriteLotAsync,
+  unfavorite: unfavoriteLotAsync
+}
+
+const LotConnected = ReactRedux.connect(null, lotMapDispatchToProps)(Lot)
+
+function Favorite ({ active, favorite, unfavorite }) {
+  const [enabled, setEnabled] = React.useState(true)
+
+  const onClickUnfavorite = () => {
+    setEnabled(false)
+    unfavorite()
+      .then(() => setEnabled(true))
+      .catch(() => setEnabled(true))
+  }
+
+  const onClickFavorite = () => {
+    setEnabled(false)
+    favorite()
+      .then(() => setEnabled(true))
+      .catch(() => setEnabled(true))
+  }
+
+  return active ? (
+    <button type="button" onClick={onClickUnfavorite} className="unfavorite" disabled={!enabled}>
+      <ion-icon name="heart-sharp" /> Unfavorite
+    </button>
+  ) : (
+    <button type="button" onClick={onClickFavorite} className="favorite" disabled={!enabled}>
+      <ion-icon name="heart-outline" /> Favorite
+    </button>
+  )
+}
+
+// ##########################
+
+ReactDOM.render(
+  <ReactRedux.Provider store={store}>
+    <App />
+  </ReactRedux.Provider>,
+  document.getElementById('root')
+)
+
+// ##########################
+
+</script>
+
+</body>
+</html>

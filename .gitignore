@@ -21,8 +21,3 @@ yarn-error.log*
 /.idea
 *.icloud
 
-# static build
-/out
-
-# result of optimize-images command
-/optimized-images
